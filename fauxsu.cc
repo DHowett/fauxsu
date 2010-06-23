@@ -160,11 +160,27 @@ extern "C" int my_fstat(int fildes, struct stat *buf) {
 	return ret;
 }
 
+#define DEFAULT_PERSIST_FILENAME ".fauxsu"
+static char _persist_filename[PATH_MAX] = "";
+
+char *persist_file_name() {
+	if(_persist_filename[0] == '\0') {
+		char *env = getenv("_FAUXSU_PERSIST_FILENAME");
+		if(env && strlen(env) > 0) {
+			strncpy(_persist_filename, env, PATH_MAX);
+		} else {
+			snprintf(_persist_filename, PATH_MAX, DEFAULT_PERSIST_FILENAME);
+		}
+		fprintf(stderr, "persist filename is %s\n", _persist_filename);
+	}
+	return _persist_filename;
+}
+
 static __attribute__((destructor)) void fini() {
 	int nmodes = mlist.size();
 	int nowns = olist.size();
 	if(nmodes == 0 && nowns == 0) return;
-	FILE *o = fopen("PERSIST", "wb+");
+	FILE *o = fopen(persist_file_name(), "wb+");
 	fwrite(&nmodes, 1, sizeof(int), o);
 	fwrite(&nowns, 1, sizeof(int), o);
 	for(modemap::const_iterator it = mlist.begin(); it != mlist.end(); ++it) {
@@ -185,7 +201,7 @@ static __attribute__((destructor)) void fini() {
 
 static __attribute__((constructor)) void init() {
 	int nmodes, nowns;
-	FILE *o = fopen("PERSIST", "rb+");
+	FILE *o = fopen(persist_file_name(), "rb+");
 	if(!o) return;
 	fread(&nmodes, 1, sizeof(int), o);
 	fread(&nowns, 1, sizeof(int), o);
