@@ -160,6 +160,11 @@ extern "C" int my_fstat(int fildes, struct stat *buf) {
 	return ret;
 }
 
+extern "C" uid_t my_getuid() { return 0; }
+extern "C" uid_t my_geteuid() { return 0; }
+extern "C" gid_t my_getgid() { return 0; }
+extern "C" gid_t my_getegid() { return 0; }
+
 #define DEFAULT_PERSIST_FILENAME ".fauxsu"
 static char _persist_filename[PATH_MAX] = "";
 
@@ -235,4 +240,8 @@ extern "C" const struct {void *n; void *o;} interposers[] __attribute((section("
 	{ (void *)my_stat, (void *)stat },
 	{ (void *)my_lstat, (void *)lstat },
 	{ (void *)my_fstat, (void *)fstat },
+	{ (void*)my_getuid, (void *)getuid },
+	{ (void*)my_geteuid, (void *)geteuid },
+	{ (void*)my_getgid, (void *)getgid },
+	{ (void*)my_getegid, (void *)getegid },
 };
