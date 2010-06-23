@@ -1,7 +1,8 @@
 LIBRARY_NAME = libfauxsu
 libfauxsu_FILES = fauxsu.cc
+libfauxsu_INSTALL_PATH = /usr/libexec/fauxsu
 
-TOOL_NAME = test
+#TOOL_NAME = test
 test_FILES = test.c
 
 ADDITIONAL_CFLAGS = -Wno-format -Wno-sign-compare
