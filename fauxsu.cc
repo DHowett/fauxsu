@@ -9,7 +9,11 @@ using namespace std;
 
 // {,l,f}stat, access, chmod, fchmod, chown, fchown
 
+#ifdef DEBUG
 #define dlog(args...) fprintf(stderr, args);
+#else
+#define dlog(args...)
+#endif
 
 struct ownership_entry {
 	uid_t owner;
@@ -36,12 +40,12 @@ static __attribute((unused)) void hexdump(void *mem, unsigned int c) {
 }
 
 static void ifakemode(dev_t dev, ino_t ino, mode_t mode) {
-	fprintf(stderr, "Setting faking mode to %o for %d.\n", mode, ino);
+	dlog("Setting faking mode to %o for %d.\n", mode, ino);
 	mlist[ino] = mode;
 }
 
 static void ifakeown(dev_t dev, ino_t ino, uid_t owner, gid_t group) {
-	fprintf(stderr, "Setting fake ownership to %d:%d for %d.\n", owner, group, ino);
+	dlog("Setting fake ownership to %d:%d for %d.\n", owner, group, ino);
 	struct ownership_entry *x = new ownership_entry();
 	x->owner = owner;
 	x->group = group;
@@ -179,7 +183,7 @@ char *persist_file_name() {
 		} else {
 			snprintf(_persist_filename, PATH_MAX, DEFAULT_PERSIST_FILENAME);
 		}
-		fprintf(stderr, "persist filename is %s\n", _persist_filename);
+		dlog("persist filename is %s\n", _persist_filename);
 	}
 	return _persist_filename;
 }
