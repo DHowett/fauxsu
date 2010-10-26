@@ -10,7 +10,7 @@ ADDITIONAL_CFLAGS = -Wno-format -Wno-sign-compare
 TARGET = native
 DEBUG = 1
 GO_EASY_ON_ME = 1
-include /Users/dustin/Projects/iphone-framework/makefiles/common.mk
+include /Users/dustin/theos/makefiles/common.mk
 include $(FW_MAKEDIR)/library.mk
 include $(FW_MAKEDIR)/tool.mk
 
