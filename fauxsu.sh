@@ -15,6 +15,11 @@ if [[ ! -z "$persist" ]]; then
 fi
 
 export DYLD_INSERT_LIBRARIES=/usr/libexec/fauxsu/libfauxsu.dylib
-cmd="$*"
-if [[ $# -eq 0 ]]; then cmd=sh; fi
-exec "$cmd"
+if [[ $# -eq 0 ]]; then
+	${SHELL:-/bin/sh}
+	RESULT=$?
+else
+	"$@"
+	RESULT=$?
+fi
+exit $RESULT
