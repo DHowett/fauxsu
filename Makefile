@@ -15,6 +15,12 @@ ADDITIONAL_CFLAGS = -Wno-format -Wno-sign-compare
 include $(FW_MAKEDIR)/library.mk
 include $(FW_MAKEDIR)/tool.mk
 
-internal-stage:: fauxsu.sh
+after-all:: $(FW_OBJ_DIR)/fauxsu.sh
+
+internal-stage::
 	@mkdir -p $(FW_STAGING_DIR)/usr/bin
-	@cp fauxsu.sh $(FW_STAGING_DIR)/usr/bin/fauxsu
+	@cp $(FW_OBJ_DIR)/fauxsu.sh $(FW_STAGING_DIR)/usr/bin/fauxsu
+	@chmod +x $(FW_STAGING_DIR)/usr/bin/fauxsu
+
+$(FW_OBJ_DIR)/fauxsu.sh: fauxsu.sh.in
+	@sed -e 's|@@FAUXSU_INSTALL_PATH@@|$(libfauxsu_INSTALL_PATH)|g' $< > $@

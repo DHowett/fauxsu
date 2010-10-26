@@ -14,7 +14,7 @@ if [[ ! -z "$persist" ]]; then
 	export _FAUXSU_PERSIST_FILENAME="$persist"
 fi
 
-export DYLD_INSERT_LIBRARIES=/usr/libexec/fauxsu/libfauxsu.dylib
+export DYLD_INSERT_LIBRARIES=@@FAUXSU_INSTALL_PATH@@/libfauxsu.dylib
 if [[ $# -eq 0 ]]; then
 	${SHELL:-/bin/sh}
 	RESULT=$?
