@@ -1,0 +1,4 @@
+Package: fauxsu
+Architecture: darwin-i386
+Maintainer: Dustin Howett <dustin@howett.net>
+Version: 0.9
