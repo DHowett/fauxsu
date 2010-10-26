@@ -82,6 +82,9 @@ static void lfakeown(const char *path, uid_t owner, gid_t group) {
 }
 
 static void dofake(struct stat *buf) {
+	buf->st_uid = 0;
+	buf->st_gid = 0;
+
 	if(olist.find(buf->st_ino) != olist.end()) {
 		struct ownership_entry *x = olist[buf->st_ino];
 		buf->st_uid = x->owner;
