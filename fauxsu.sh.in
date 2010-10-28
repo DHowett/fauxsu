@@ -14,7 +14,22 @@ if [[ ! -z "$persist" ]]; then
 	export _FAUXSU_PERSIST_FILENAME="$persist"
 fi
 
-export DYLD_INSERT_LIBRARIES=@@FAUXSU_INSTALL_PATH@@/libfauxsu.dylib
+_LIBFAUXSU="@@FAUXSU_INSTALL_PATH@@/libfauxsu.dylib"
+
+if [[ ! -z "${FW_BINDIR}" ]]; then
+	_LIBFAUXSU="${FW_BINDIR}/libfauxsu.dylib"
+fi
+
+if [[ ! -f "$_LIBFAUXSU" ]]; then
+	_SELF="$(dirname $0)"
+	_LIBFAUXSU="$_SELF/libfauxsu.dylib"
+fi
+
+if [[ ! -f "$_LIBFAUXSU" ]]; then
+	echo "I couldn't find libfauxsu.dylib :(" 1>&2
+fi
+
+export DYLD_INSERT_LIBRARIES="${_LIBFAUXSU}"
 if [[ $# -eq 0 ]]; then
 	${SHELL:-/bin/sh}
 	RESULT=$?
