@@ -16,6 +16,10 @@ fi
 
 _LIBFAUXSU="@@FAUXSU_INSTALL_PATH@@/libfauxsu.dylib"
 
+if [[ ! -z "${THEOS_BIN_PATH}" ]]; then
+	_LIBFAUXSU="${THEOS_BIN_PATH}/libfauxsu.dylib"
+fi
+
 if [[ ! -z "${FW_BINDIR}" ]]; then
 	_LIBFAUXSU="${FW_BINDIR}/libfauxsu.dylib"
 fi
