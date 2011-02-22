@@ -3,18 +3,25 @@ Homepage: http://github.com/DHowett/fauxsu
 Maintainer: Dustin Howett <dustin@howett.net>
 Version: 0.9
 Revision: 1
+License: GPL
+BuildDepends: fink (>= 0.28)
 Source: http://uv.howett.net/fauxsu-%v.tgz
 SourceDirectory: fauxsu-%v
-Source-MD5: d0d6716634d75a11265dafac225f23b1
+Source-MD5: fa1172e551ca4fba579fc5455ff40546
 CompileScript: <<
  sed -i '' -e 's/libexec/%lib/' Makefile
  make INSTALL_PREFIX=%p messages=yes
 <<
 InstallScript: <<
  make stage INSTALL_PREFIX=%p FW_STAGING_DIR=%d messages=yes
+ mkdir -p %i/share/doc/%N
+ cp LICENSE %i/share/doc/%N
 <<
-Description: Grants applications fake root privileges.
+Description: Grants applications fake root privileges
 DescDetail: <<
  fauxsu wraps system calls involved in changing file ownership and modes,
  allowing programs to act as if run as the superuser.
+<<
+Shlibs: <<
+ !%p/lib/%N/libfauxsu.dylib
 <<
