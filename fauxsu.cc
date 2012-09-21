@@ -193,6 +193,7 @@ static __attribute__((destructor)) void fini() {
 	int nowns = olist.size();
 	if(nmodes == 0 && nowns == 0) return;
 	FILE *o = fopen(persist_file_name(), "wb+");
+	if(!o) return;
 	fwrite(&nmodes, 1, sizeof(int), o);
 	fwrite(&nowns, 1, sizeof(int), o);
 	for(modemap::const_iterator it = mlist.begin(); it != mlist.end(); ++it) {
