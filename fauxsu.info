@@ -13,7 +13,7 @@ CompileScript: <<
  make INSTALL_PREFIX=%p messages=yes
 <<
 InstallScript: <<
- make stage INSTALL_PREFIX=%p FW_STAGING_DIR=%d messages=yes
+ make stage INSTALL_PREFIX=%p THEOS_STAGING_DIR=%d messages=yes
  mkdir -p %i/share/doc/%N
  cp LICENSE %i/share/doc/%N
 <<
