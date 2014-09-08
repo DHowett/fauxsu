@@ -1,22 +1,37 @@
-ifeq ($(FW_TARGET_LOADED),)
-FW_TARGET_LOADED := 1
-FW_TARGET_NAME := macosx
+ifeq ($(_THEOS_TARGET_LOADED),)
+_THEOS_TARGET_LOADED := 1
+THEOS_TARGET_NAME := macosx
 
-SDKBINPATH ?= /usr/bin
+ifeq ($(__THEOS_TARGET_ARG_1),clang)
+_THEOS_TARGET_CC := clang
+_THEOS_TARGET_CXX := clang++
+_THEOS_TARGET_ARG_ORDER := 2
+else
+_THEOS_TARGET_CC := gcc
+_THEOS_TARGET_CXX := g++
+_THEOS_TARGET_ARG_ORDER := 1
+endif
 
-TARGET_CC ?= $(SDKBINPATH)/gcc-4.2
-TARGET_CXX ?= $(SDKBINPATH)/g++-4.2
-TARGET_STRIP ?= $(SDKBINPATH)/strip
+_THEOS_TARGET_MACOSX_DEPLOYMENT_VERSION := $(__THEOS_TARGET_ARG_$(_THEOS_TARGET_ARG_ORDER))
+TARGET_CC ?= xcrun -sdk macosx $(_THEOS_TARGET_CC)
+TARGET_CXX ?= xcrun -sdk macosx $(_THEOS_TARGET_CXX)
+TARGET_LD ?= xcrun -sdk macosx $(_THEOS_TARGET_CXX)
+TARGET_STRIP ?= xcrun -sdk macosx strip
 TARGET_STRIP_FLAGS ?= -x
-TARGET_CODESIGN_ALLOCATE ?= $(SDKBINPATH)/codesign_allocate
+TARGET_CODESIGN_ALLOCATE ?= "$(shell xcrun -sdk macosx -find codesign_allocate)"
 TARGET_CODESIGN ?=
 TARGET_CODESIGN_FLAGS ?=
 
-include $(FW_MAKEDIR)/targets/_common/install_deb_local.mk
-include $(FW_MAKEDIR)/targets/_common/darwin.mk
+TARGET_PRIVATE_FRAMEWORK_PATH = /System/Library/PrivateFrameworks
+
+include $(THEOS_MAKE_PATH)/targets/_common/darwin.mk
+include $(THEOS_MAKE_PATH)/targets/_common/darwin_hierarchial_bundle.mk
 
 ARCHS ?= i386 x86_64
-SDKFLAGS := $(foreach ARCH,$(ARCHS),-arch $(ARCH))
-TARGET_CFLAGS := $(SDKFLAGS)
-TARGET_LDFLAGS := $(SDKFLAGS) -multiply_defined suppress
+SDKFLAGS := $(foreach ARCH,$(ARCHS),-arch $(ARCH)) $(if $(_THEOS_TARGET_MACOSX_DEPLOYMENT_VERSION),-mmacosx-version-min=$(_THEOS_TARGET_MACOSX_DEPLOYMENT_VERSION))
+_THEOS_TARGET_CFLAGS := $(SDKFLAGS)
+_THEOS_TARGET_LDFLAGS := $(SDKFLAGS) -multiply_defined suppress
+
+export TARGET_INSTALL_REMOTE := $(_THEOS_FALSE)
+export _THEOS_TARGET_DEFAULT_PACKAGE_FORMAT := deb
 endif

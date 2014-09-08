@@ -1,77 +1,87 @@
-ifeq ($(FW_PACKAGING_RULES_LOADED),)
-FW_PACKAGING_RULES_LOADED := 1
+ifeq ($(_THEOS_PACKAGE_RULES_LOADED),)
+_THEOS_PACKAGE_RULES_LOADED := 1
 
-.PHONY: package before-package internal-package after-package-buildno after-package \
-	stage before-stage internal-stage after-stage
+## Packaging Core Rules
+.PHONY: package internal-package-check before-package internal-package after-package
 
-# For the toplevel invocation of make, mark 'all' and the *-package rules as prerequisites.
-# We do not do this for anything else, because otherwise, all the packaging rules would run for every subproject.
-ifeq ($(_FW_TOP_INVOCATION_DONE),)
-stage:: all before-stage internal-stage after-stage
+package:: internal-package-check stage before-package internal-package after-package
+before-package:: $(THEOS_PACKAGE_DIR)
+internal-package internal-package-check::
+	@:
 
-_FW_HAS_DPKG_DEB := $(shell type dpkg-deb > /dev/null 2>&1 && echo 1 || echo 0)
-ifeq ($(_FW_HAS_DPKG_DEB),1)
-package:: stage package-build-deb
-else # _FW_HAS_DPKG_DEB == 0
-package::
-	@echo "$(MAKE) package requires dpkg-deb."; exit 1
+# __THEOS_LAST_PACKAGE_FILENAME is to be set by a rule variable in the package format makefile.
+after-package::
+	@echo "$(__THEOS_LAST_PACKAGE_FILENAME)" > "$(_THEOS_LOCAL_DATA_DIR)/last_package"
+
+THEOS_PACKAGE_NAME :=
+THEOS_PACKAGE_ARCH :=
+THEOS_PACKAGE_BASE_VERSION :=
+# THEOS_PACKAGE_VERSION is set in common.mk (to give its warning.)
+
+-include $(THEOS_MAKE_PATH)/package/$(_THEOS_PACKAGE_FORMAT).mk
+$(eval $(call __mod,package/$(_THEOS_PACKAGE_FORMAT).mk))
+
+ifeq ($(_THEOS_PACKAGE_FORMAT_LOADED),)
+$(error I simply cannot figure out how to create $(_THEOS_PACKAGE_FORMAT)-format packages.)
 endif
 
+export THEOS_PACKAGE_NAME THEOS_PACKAGE_ARCH THEOS_PACKAGE_BASE_VERSION
+
+# These are here to be used by the package makefile included above.
+# We want them after the package makefile so that we can use variables set within it.
+
+# eval PACKAGE_VERSION *now* (to clear out references to VERSION.*: they have no bearing on
+# the 'base' version we calculate.)
+VERSION.INC_BUILD_NUMBER := X
+VERSION.EXTRAVERSION := X
+__USERVER_FOR_BUILDNUM := $(PACKAGE_VERSION)
+__BASEVER_FOR_BUILDNUM = $(or $(__USERVER_FOR_BUILDNUM),$(THEOS_PACKAGE_BASE_VERSION))
+
+
+# We simplify the version vars so that they are evaluated only when completely necessary.
+# This is because they can include things like incrementing build numbers.
+
+# I am committing a willful departure from the THEOS_ naming convention, because I believe
+# that offering these via an easy-to-use interface makes more sense than hiding them behind
+# a really stupidly long name.
+# VERSION.* are meant to be used in user PACKAGE_VERSIONs.
+VERSION.INC_BUILD_NUMBER = $(shell THEOS_PROJECT_DIR="$(THEOS_PROJECT_DIR)" "$(THEOS_BIN_PATH)/package_version.sh" -N "$(THEOS_PACKAGE_NAME)" -V "$(__BASEVER_FOR_BUILDNUM)")
+VERSION.EXTRAVERSION = $(if $(PACKAGE_BUILDNAME),+$(PACKAGE_BUILDNAME))
+_THEOS_PACKAGE_DEFAULT_VERSION_FORMAT = $(THEOS_PACKAGE_BASE_VERSION)-$(VERSION.INC_BUILD_NUMBER)$(VERSION.EXTRAVERSION)
+
+# Copy the actual value of PACKAGE_VERSION to __PACKAGE_VERSION and replace PACKAGE_VERSION with
+# a mere reference (to a simplified copy.)
+# We're doing this to clean up the user's PACKAGE_VERSION and make it safe for reuse.
+# (otherwise, they might trigger build number increases without meaning to.)
+# Defer the simplification until __PACKAGE_VERSION is used - do not do it before the eval
+# However, we want to do the schema calculation and value stuff before the eval, so that
+# __PACKAGE_VERSION becomes an exact copy of the PACKAGE_VERSION variable we chose.
+$(eval __PACKAGE_VERSION = $$(call __simplify,__PACKAGE_VERSION,$(value $(call __schema_var_name_last,,PACKAGE_VERSION))))
+override PACKAGE_VERSION = $(__PACKAGE_VERSION)
+
+_THEOS_INTERNAL_PACKAGE_VERSION = $(call __simplify,_THEOS_INTERNAL_PACKAGE_VERSION,$(or $(__PACKAGE_VERSION),$(_THEOS_PACKAGE_DEFAULT_VERSION_FORMAT),1))
+
+## Installation Core Rules
 install:: before-install internal-install after-install
-else # _FW_TOP_INVOCATION_DONE
-stage:: internal-stage
-package::
-install::
-endif
 
-FAKEROOT := $(FW_BINDIR)/fakeroot.sh -p "$(FW_PROJECT_DIR)/.theos/fakeroot"
-export FAKEROOT
+export TARGET_INSTALL_REMOTE
+_THEOS_INSTALL_TYPE := local
+ifeq ($(TARGET_INSTALL_REMOTE),$(_THEOS_TRUE))
+_THEOS_INSTALL_TYPE := remote
+ifeq ($(THEOS_DEVICE_IP),)
+internal-install::
+	$(info $(MAKE) install requires that you set THEOS_DEVICE_IP in your environment. It is also recommended that you have public-key authentication set up for root over SSH, or you will be entering your password a lot.)
+	@exit 1
+endif # THEOS_DEVICE_IP == ""
+THEOS_DEVICE_PORT ?= 22
+export THEOS_DEVICE_IP THEOS_DEVICE_PORT
+endif # TARGET_INSTALL_REMOTE == true
 
-# Only do the master packaging rules if we're the toplevel make invocation.
-ifeq ($(_FW_TOP_INVOCATION_DONE),)
-before-stage::
-	$(ECHO_NOTHING)rm -rf "$(FW_STAGING_DIR)"$(ECHO_END)
-	$(ECHO_NOTHING)$(FAKEROOT) -c$(ECHO_END)
-	$(ECHO_NOTHING)mkdir -p "$(FW_STAGING_DIR)"$(ECHO_END)
-
-ifeq ($(FW_CAN_PACKAGE),1) # Control file found (or layout/ found.)
-
-FW_PACKAGE_NAME := $(shell grep "^Package:" "$(FW_PACKAGE_CONTROL_PATH)" | cut -d' ' -f2)
-FW_PACKAGE_ARCH := $(shell grep "^Architecture:" "$(FW_PACKAGE_CONTROL_PATH)" | cut -d' ' -f2)
-FW_PACKAGE_VERSION := $(shell grep "^Version:" "$(FW_PACKAGE_CONTROL_PATH)" | cut -d' ' -f2)
-
-FW_PACKAGE_DEBVERSION = $(shell grep "^Version:" "$(FW_STAGING_DIR)/DEBIAN/control" | cut -d' ' -f2)
-
-FW_PACKAGE_FILENAME = $(FW_PACKAGE_NAME)_$(FW_PACKAGE_DEBVERSION)_$(FW_PACKAGE_ARCH)
-
-package-build-deb-buildno::
-	$(ECHO_NOTHING)mkdir -p $(FW_STAGING_DIR)/DEBIAN$(ECHO_END)
-ifeq ($(FW_HAS_LAYOUT),1) # If we have a layout/ directory, copy layout/DEBIAN to the staging directory.
-	$(ECHO_NOTHING)rsync -a "$(FW_PROJECT_DIR)/layout/DEBIAN/" "$(FW_STAGING_DIR)/DEBIAN" $(FW_RSYNC_EXCLUDES)$(ECHO_END)
-endif # FW_HAS_LAYOUT
-	$(ECHO_NOTHING)$(FW_BINDIR)/package_version.sh -c "$(FW_PACKAGE_CONTROL_PATH)" $(if $(PACKAGE_BUILDNAME),-e $(PACKAGE_BUILDNAME),) > "$(FW_STAGING_DIR)/DEBIAN/control"$(ECHO_END)
-	$(ECHO_NOTHING)echo "Installed-Size: $(shell du $(DU_EXCLUDE) DEBIAN -ks "$(FW_STAGING_DIR)" | cut -f 1)" >> "$(FW_STAGING_DIR)/DEBIAN/control"$(ECHO_END)
-
-package-build-deb:: package-build-deb-buildno
-	$(ECHO_NOTHING)$(FAKEROOT) -r dpkg-deb -b "$(FW_STAGING_DIR)" "$(FW_PROJECT_DIR)/$(FW_PACKAGE_FILENAME).deb" $(STDERR_NULL_REDIRECT)$(ECHO_END)
-
-else # FW_CAN_PACKAGE == 0
-package-build-deb::
-	@echo "$(MAKE) package requires you to have a layout/ directory in the project root, containing the basic package structure, or a control file in the project root describing the package."; exit 1
-
-endif # FW_CAN_PACKAGE
-
-endif # _FW_TOP_INVOCATION_DONE
-
-# *-stage calls *-package for backwards-compatibility.
-internal-package after-package::
-internal-stage:: internal-package
-	$(ECHO_NOTHING)[ -d layout ] && rsync -a "layout/" "$(FW_STAGING_DIR)" --exclude "DEBIAN" $(FW_RSYNC_EXCLUDES) || true$(ECHO_END)
-
-after-stage:: after-package
-
-before-install::
 after-install:: internal-after-install
-internal-after-install::
+before-install internal-install internal-after-install::
+	@:
 
-endif # FW_PACKAGING_RULES_LOADED
+-include $(THEOS_MAKE_PATH)/install/$(_THEOS_PACKAGE_FORMAT)_$(_THEOS_INSTALL_TYPE).mk
+$(eval $(call __mod,install/$(_THEOS_PACKAGE_FORMAT)_$(_THEOS_INSTALL_TYPE).mk))
+
+endif # _THEOS_PACKAGE_RULES_LOADED

@@ -1,123 +1,202 @@
 all::
 
-TOP_DIR ?= $(shell pwd)
-FW_PROJECT_DIR ?= $(TOP_DIR)
-
-ifeq ($(FRAMEWORKDIR),)
-_FW_RELATIVE_MAKE_DIR = $(dir $(lastword $(MAKEFILE_LIST)))
-FRAMEWORKDIR := $(shell (unset CDPATH; cd $(_FW_RELATIVE_MAKE_DIR); cd ..; pwd))
-ifneq ($(words $(FRAMEWORKDIR)),1) # It's a hack, but it works.
-$(shell ln -Ffs "$(FRAMEWORKDIR)" /tmp/theos)
-FRAMEWORKDIR := /tmp/theos
+ifeq ($(notdir $(firstword $(SUDO_COMMAND))),make)
+$(error Do not use 'sudo make')
 endif
+
+THEOS_PROJECT_DIR ?= $(shell pwd)
+_THEOS_LOCAL_DATA_DIR := $(THEOS_PROJECT_DIR)/.theos
+
+### Functions
+# Function for getting a clean absolute path from cd.
+__clean_pwd = $(shell (unset CDPATH; cd "$(1)"; pwd))
+# Truthiness
+_THEOS_TRUE := 1
+_THEOS_FALSE :=
+__theos_bool = $(if $(filter Y y YES yes 1,$(1)),$(_THEOS_TRUE),$(_THEOS_FALSE))
+# Existence
+__exists = $(if $(wildcard $(1)),$(_THEOS_TRUE),$(_THEOS_FALSE))
+__executable = $(if $(shell PATH="$(THEOS_BIN_PATH):$$PATH" type "$(1)" > /dev/null 2>&1 && echo 1),$(_THEOS_TRUE),$(_THEOS_FALSE))
+# Static redefinition
+__simplify = $(2)$(eval $(1):=$(2))
+###
+
+__THEOS_COMMON_MK_VERSION := 1
+
+ifeq ($(_THEOS_PROJECT_MAKEFILE_NAME),)
+_THEOS_STATIC_MAKEFILE_LIST := $(filter-out $(lastword $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+export _THEOS_PROJECT_MAKEFILE_NAME := $(notdir $(lastword $(_THEOS_STATIC_MAKEFILE_LIST)))
 endif
-FW_MAKEDIR := $(FRAMEWORKDIR)/makefiles
-FW_BINDIR := $(FRAMEWORKDIR)/bin
-FW_LIBDIR := $(FRAMEWORKDIR)/lib
-FW_INCDIR := $(FRAMEWORKDIR)/include
-FW_MODDIR := $(FRAMEWORKDIR)/mod
-export FRAMEWORKDIR FW_BINDIR FW_MAKEDIR FW_LIBDIR FW_INCDIR
-export FW_PROJECT_DIR
 
-export PATH := $(FW_BINDIR):$(PATH)
+ifeq ($(_THEOS_INTERNAL_TRUE_PATH),)
+_THEOS_RELATIVE_MAKE_PATH := $(dir $(lastword $(MAKEFILE_LIST)))
+_THEOS_INTERNAL_TRUE_PATH := $(call __clean_pwd,$(_THEOS_RELATIVE_MAKE_PATH)/..)
+ifneq ($(words $(_THEOS_INTERNAL_TRUE_PATH)),1) # It's a hack, but it works.
+$(shell unlink /tmp/theos &> /dev/null; ln -Ffs "$(_THEOS_INTERNAL_TRUE_PATH)" /tmp/theos)
+_THEOS_INTERNAL_TRUE_PATH := /tmp/theos
+endif
+override THEOS := $(_THEOS_INTERNAL_TRUE_PATH)
+export _THEOS_INTERNAL_TRUE_PATH
+endif
+THEOS_MAKE_PATH := $(THEOS)/makefiles
+THEOS_BIN_PATH := $(THEOS)/bin
+THEOS_LIBRARY_PATH := $(THEOS)/lib
+THEOS_INCLUDE_PATH := $(THEOS)/include
+THEOS_MODULE_PATH := $(THEOS)/mod
+export THEOS THEOS_BIN_PATH THEOS_MAKE_PATH THEOS_LIBRARY_PATH THEOS_INCLUDE_PATH
+export THEOS_PROJECT_DIR
 
-# There are some packaging-related variables set here because some of the target install rules rely on them.
-ifeq ($(_FW_TOP_INVOCATION_DONE),)
-FW_HAS_LAYOUT := $(shell [ -d "$(FW_PROJECT_DIR)/layout" ] && echo 1 || echo 0)
-ifeq ($(FW_HAS_LAYOUT),1)
-	FW_PACKAGE_CONTROL_PATH := $(FW_PROJECT_DIR)/layout/DEBIAN/control
-else # FW_HAS_LAYOUT == 0
-	FW_PACKAGE_CONTROL_PATH := $(FW_PROJECT_DIR)/control
-endif # FW_HAS_LAYOUT
-FW_CAN_PACKAGE := $(shell [ -f "$(FW_PACKAGE_CONTROL_PATH)" ] && echo 1 || echo 0)
-endif # FW_TOP_INVOCATION_DONE
+export PATH := $(THEOS_BIN_PATH):$(PATH)
 
-_FW_MODULES := $(sort $(MODULES) $(THEOS_AUTOLOAD_MODULES))
+ifeq ($(THEOS_SCHEMA),)
+_THEOS_SCHEMA := $(shell echo "$(strip $(schema) $(SCHEMA))" | tr 'a-z' 'A-Z')
+_THEOS_ON_SCHEMA := DEFAULT $(filter-out -%,$(_THEOS_SCHEMA))
+ifeq ($(call __theos_bool,$(or $(debug),$(DEBUG))),$(_THEOS_TRUE))
+	_THEOS_ON_SCHEMA += DEBUG
+endif
+_THEOS_OFF_SCHEMA := $(patsubst -%,%,$(filter -%,$(_THEOS_SCHEMA)))
+override THEOS_SCHEMA := $(strip $(filter-out $(_THEOS_OFF_SCHEMA),$(_THEOS_ON_SCHEMA)))
+override _THEOS_CLEANED_SCHEMA_SET := $(shell echo "$(filter-out DEFAULT,$(THEOS_SCHEMA))" | tr -Cd ' A-Z' | tr ' A-Z' '_a-z')
+export THEOS_SCHEMA _THEOS_CLEANED_SCHEMA_SET
+endif
 
+###
+# __schema_defined_var_names bears explanation:
+# For each schema'd variable gathered from __schema_all_var_names, we generate a list of
+# "origin:name" pairs, and then filter out all pairs where the origin is "undefined".
+# We then substitute " " for ":" and take the last word, so we end up with only the entries from
+# __schema_all_var_names that are defined.
+__schema_all_var_names = $(foreach sch,$(THEOS_SCHEMA),$(subst DEFAULT.,,$(sch).)$(1)$(2))
+__schema_defined_var_names = $(foreach tuple,$(filter-out undefined:%,$(foreach schvar,$(call __schema_all_var_names,$(1),$(2)),$(origin $(schvar)):$(schvar))),$(lastword $(subst :, ,$(tuple))))
+__schema_var_all = $(strip $(foreach sch,$(call __schema_all_var_names,$(1),$(2)),$($(sch))))
+__schema_var_name_last = $(strip $(lastword $(call __schema_defined_var_names,$(1),$(2))))
+__schema_var_last = $(strip $($(lastword $(call __schema_defined_var_names,$(1),$(2)))))
+
+ifeq ($(_THEOS_HAS_STAGING_LAYOUT),)
+_THEOS_HAS_STAGING_LAYOUT := $(call __exists,$(THEOS_PROJECT_DIR)/layout)
+endif
+
+_THEOS_LOAD_MODULES := $(sort $(call __schema_var_all,,MODULES) $(THEOS_AUTOLOAD_MODULES))
+__mod = -include $$(foreach mod,$$(_THEOS_LOAD_MODULES),$$(THEOS_MODULE_PATH)/$$(mod)/$(1))
+
+include $(THEOS_MAKE_PATH)/legacy.mk
+
+ifneq ($(_THEOS_PLATFORM_CALCULATED),1)
 uname_s := $(shell uname -s)
 uname_p := $(shell uname -p)
-FW_PLATFORM_ARCH = $(uname_s)-$(uname_p)
-FW_PLATFORM = $(uname_s)
--include $(FW_MAKEDIR)/platform/$(uname_s)-$(uname_p).mk
--include $(FW_MAKEDIR)/platform/$(uname_s).mk
-
-_FW_TARGET := $(or $(target),$(TARGET),$(FW_PLATFORM_DEFAULT_TARGET))
-ifeq ($(_FW_TARGET),)
-$(error You did not specify a target, and the "$(FW_PLATFORM_NAME)" platform does not define a default target)
-endif
-_FW_TARGET := $(subst :, ,$(_FW_TARGET))
-_FW_TARGET_ARGS := $(wordlist 2,$(words $(_FW_TARGET)),$(_FW_TARGET))
-_FW_TARGET := $(firstword $(_FW_TARGET))
-
--include $(FW_MAKEDIR)/targets/$(FW_PLATFORM_ARCH)/$(_FW_TARGET).mk
--include $(FW_MAKEDIR)/targets/$(FW_PLATFORM)/$(_FW_TARGET).mk
--include $(FW_MAKEDIR)/targets/$(_FW_TARGET).mk
--include $(foreach mod,$(_FW_MODULES),$(FW_MODDIR)/$(mod)/targets/$(FW_PLATFORM_ARCH)/$(_FW_TARGET).mk)
--include $(foreach mod,$(_FW_MODULES),$(FW_MODDIR)/$(mod)/targets/$(FW_PLATFORM)/$(_FW_TARGET).mk)
--include $(foreach mod,$(_FW_MODULES),$(FW_MODDIR)/$(mod)/targets/$(_FW_TARGET).mk)
-
-ifneq ($(FW_TARGET_LOADED),1)
-$(error The "$(_FW_TARGET)" target is not supported on the "$(FW_PLATFORM_NAME)" platform)
+export _THEOS_PLATFORM_ARCH = $(uname_s)-$(uname_p)
+export _THEOS_PLATFORM = $(uname_s)
+export _THEOS_PLATFORM_CALCULATED := 1
 endif
 
-_FW_TARGET_NAME_DEFINE := $(shell echo "$(FW_TARGET_NAME)" | tr 'a-z' 'A-Z')
+-include $(THEOS_MAKE_PATH)/platform/$(_THEOS_PLATFORM_ARCH).mk
+-include $(THEOS_MAKE_PATH)/platform/$(_THEOS_PLATFORM).mk
+$(eval $(call __mod,platform/$(_THEOS_PLATFORM_ARCH).mk))
+$(eval $(call __mod,platform/$(_THEOS_PLATFORM).mk))
 
-export TARGET_CC TARGET_CXX TARGET_STRIP TARGET_CODESIGN_ALLOCATE TARGET_CODESIGN TARGET_CODESIGN_FLAGS
+ifneq ($(_THEOS_TARGET_CALCULATED),1)
+__TARGET_MAKEFILE := $(shell $(THEOS_BIN_PATH)/target.pl "$(target)" "$(call __schema_var_last,,TARGET)" "$(_THEOS_PLATFORM_DEFAULT_TARGET)")
+-include $(__TARGET_MAKEFILE)
+$(shell rm -f $(__TARGET_MAKEFILE) > /dev/null 2>&1)
+export _THEOS_TARGET := $(__THEOS_TARGET_ARG_0)
+ifeq ($(_THEOS_TARGET),)
+$(error You did not specify a target, and the "$(THEOS_PLATFORM_NAME)" platform does not define a default target)
+endif
+export _THEOS_TARGET_CALCULATED := 1
+endif
+
+-include $(THEOS_MAKE_PATH)/targets/$(_THEOS_PLATFORM_ARCH)/$(_THEOS_TARGET).mk
+-include $(THEOS_MAKE_PATH)/targets/$(_THEOS_PLATFORM)/$(_THEOS_TARGET).mk
+-include $(THEOS_MAKE_PATH)/targets/$(_THEOS_TARGET).mk
+$(eval $(call __mod,targets/$(_THEOS_PLATFORM_ARCH)/$(_THEOS_TARGET).mk))
+$(eval $(call __mod,targets/$(_THEOS_PLATFORM)/$(_THEOS_TARGET).mk))
+$(eval $(call __mod,targets/$(_THEOS_TARGET).mk))
+
+ifneq ($(_THEOS_TARGET_LOADED),1)
+$(error The "$(_THEOS_TARGET)" target is not supported on the "$(THEOS_PLATFORM_NAME)" platform)
+endif
+
+_THEOS_TARGET_NAME_DEFINE := $(shell echo "$(THEOS_TARGET_NAME)" | tr 'a-z' 'A-Z')
+
+export TARGET_CC TARGET_CXX TARGET_LD TARGET_STRIP TARGET_CODESIGN_ALLOCATE TARGET_CODESIGN TARGET_CODESIGN_FLAGS
+
+THEOS_TARGET_INCLUDE_PATH := $(THEOS_INCLUDE_PATH)/$(THEOS_TARGET_NAME)
+THEOS_TARGET_LIBRARY_PATH := $(THEOS_LIBRARY_PATH)/$(THEOS_TARGET_NAME)
+_THEOS_TARGET_HAS_INCLUDE_PATH := $(call __exists,$(THEOS_TARGET_INCLUDE_PATH))
+_THEOS_TARGET_HAS_LIBRARY_PATH := $(call __exists,$(THEOS_TARGET_LIBRARY_PATH))
+
+# Package Format requires Target default and falls back to `none'.
+_THEOS_PACKAGE_FORMAT := $(or $(call __schema_var_last,,PACKAGE_FORMAT),$(_THEOS_TARGET_DEFAULT_PACKAGE_FORMAT),none)
+_THEOS_PACKAGE_LAST_FILENAME = $(call __simplify,_THEOS_PACKAGE_LAST_FILENAME,$(shell cat "$(_THEOS_LOCAL_DATA_DIR)/last_package" 2>/dev/null))
 
 # ObjC/++ stuff is not here, it's in instance/rules.mk and only added if there are OBJC/OBJCC objects.
-INTERNAL_LDFLAGS = -L$(FW_LIBDIR)
+_THEOS_INTERNAL_LDFLAGS = $(if $(_THEOS_TARGET_HAS_LIBRARY_PATH),-L$(THEOS_TARGET_LIBRARY_PATH) )-L$(THEOS_LIBRARY_PATH)
 
 OPTFLAG ?= -O2
 DEBUGFLAG ?= -ggdb
-ifeq ($(DEBUG),1)
-DEBUG_CFLAGS = -DDEBUG $(DEBUGFLAG)
-DEBUG_LDFLAGS = $(DEBUGFLAG)
-OPTFLAG := $(filter-out -O%, $(OPTFLAG))
+DEBUG.CFLAGS = -DDEBUG $(DEBUGFLAG) -O0
+DEBUG.LDFLAGS = $(DEBUGFLAG) -O0
+ifneq ($(findstring DEBUG,$(THEOS_SCHEMA)),)
 TARGET_STRIP = :
 PACKAGE_BUILDNAME ?= debug
 endif
 
-INTERNAL_CFLAGS = -DTARGET_$(_FW_TARGET_NAME_DEFINE)=1 $(OPTFLAG) -I$(FW_INCDIR) -include $(FRAMEWORKDIR)/Prefix.pch -Wall
+_THEOS_INTERNAL_CFLAGS = -DTARGET_$(_THEOS_TARGET_NAME_DEFINE)=1 $(OPTFLAG) $(if $(_THEOS_TARGET_HAS_INCLUDE_PATH),-I$(THEOS_TARGET_INCLUDE_PATH) )-I$(THEOS_INCLUDE_PATH) -include $(THEOS)/Prefix.pch -Wall
 ifneq ($(GO_EASY_ON_ME),1)
-	INTERNAL_CFLAGS += -Werror
+	_THEOS_INTERNAL_LOGOSFLAGS += -c warnings=error
+	_THEOS_INTERNAL_CFLAGS += -Werror
 endif
-INTERNAL_CFLAGS += $(SHARED_CFLAGS)
 
-FW_BUILD_DIR ?= .
+THEOS_BUILD_DIR ?= .
 
-# If we're not using the default target, put the output in a folder named after the target.
-ifneq ($(FW_TARGET_NAME),$(FW_PLATFORM_DEFAULT_TARGET))
-	FW_OBJ_DIR_NAME ?= obj/$(FW_TARGET_NAME)
+ifneq ($(_THEOS_CLEANED_SCHEMA_SET),)
+	_THEOS_OBJ_DIR_EXTENSION = /$(_THEOS_CLEANED_SCHEMA_SET)
+endif
+ifneq ($(THEOS_TARGET_NAME),$(_THEOS_PLATFORM_DEFAULT_TARGET))
+	THEOS_OBJ_DIR_NAME ?= obj/$(THEOS_TARGET_NAME)$(_THEOS_OBJ_DIR_EXTENSION)
 else
-	FW_OBJ_DIR_NAME ?= obj
+	THEOS_OBJ_DIR_NAME ?= obj$(_THEOS_OBJ_DIR_EXTENSION)
 endif
-FW_OBJ_DIR = $(FW_BUILD_DIR)/$(FW_OBJ_DIR_NAME)
+THEOS_OBJ_DIR = $(THEOS_BUILD_DIR)/$(THEOS_OBJ_DIR_NAME)
 
-FW_STAGING_DIR_NAME ?= _
-FW_STAGING_DIR = $(FW_PROJECT_DIR)/$(FW_STAGING_DIR_NAME)
+THEOS_STAGING_DIR_NAME ?= _
+THEOS_STAGING_DIR = $(THEOS_PROJECT_DIR)/$(THEOS_STAGING_DIR_NAME)
+_SPACE :=
+_SPACE += 
+_THEOS_ESCAPED_STAGING_DIR = $(subst $(_SPACE),\ ,$(THEOS_STAGING_DIR))
 
-# $(warning ...) expands to the empty string, so the contents of FW_STAGING_DIR are not damaged in this copy.
-FW_PACKAGE_STAGING_DIR = $(FW_STAGING_DIR)$(warning FW_PACKAGE_STAGING_DIR is deprecated; please use FW_STAGING_DIR)
-
-FW_SUBPROJECT_PRODUCT = subproject.o
-
-include $(FW_MAKEDIR)/messages.mk
-ifneq ($(messages),yes)
-	FW_NO_PRINT_DIRECTORY_FLAG = --no-print-directory
+ifeq ($(THEOS_PACKAGE_DIR_NAME),)
+THEOS_PACKAGE_DIR = $(THEOS_BUILD_DIR)
 else
-	FW_NO_PRINT_DIRECTORY_FLAG = 
+THEOS_PACKAGE_DIR = $(THEOS_BUILD_DIR)/$(THEOS_PACKAGE_DIR_NAME)
 endif
 
-unexport FW_INSTANCE FW_TYPE
+# $(warning ...) expands to the empty string, so the contents of THEOS_STAGING_DIR are not damaged in this copy.
+FW_PACKAGE_STAGING_DIR = $(THEOS_STAGING_DIR)$(warning FW_PACKAGE_STAGING_DIR is deprecated; please use THEOS_STAGING_DIR)
 
-ifneq ($(TARGET_CODESIGN),)
-FW_CODESIGN_COMMANDLINE = CODESIGN_ALLOCATE=$(TARGET_CODESIGN_ALLOCATE) $(TARGET_CODESIGN) $(TARGET_CODESIGN_FLAGS)
+THEOS_SUBPROJECT_PRODUCT = subproject.o
+
+include $(THEOS_MAKE_PATH)/messages.mk
+ifeq ($(_THEOS_VERBOSE),$(_THEOS_FALSE))
+	_THEOS_NO_PRINT_DIRECTORY_FLAG := --no-print-directory
 else
-FW_CODESIGN_COMMANDLINE = 
+	_THEOS_NO_PRINT_DIRECTORY_FLAG := 
 endif
 
-FW_RSYNC_EXCLUDES := --exclude "_MTN" --exclude ".git" --exclude ".svn" --exclude ".DS_Store" --exclude "._*"
+unexport THEOS_CURRENT_INSTANCE _THEOS_CURRENT_TYPE
 
-FW_MAKE_PARALLEL_BUILDING ?= yes
+THEOS_RSYNC_EXCLUDES ?= _MTN .git .svn .DS_Store ._*
+_THEOS_RSYNC_EXCLUDE_COMMANDLINE := $(foreach exclude,$(THEOS_RSYNC_EXCLUDES),--exclude "$(exclude)")
 
--include $(foreach mod,$(_FW_MODULES),$(FRAMEWORKDIR)/mod/$(mod)/common.mk)
+FAKEROOT := $(THEOS_BIN_PATH)/fakeroot.sh -p "$(_THEOS_LOCAL_DATA_DIR)/fakeroot"
+export FAKEROOT
+
+_THEOS_MAKE_PARALLEL_BUILDING ?= yes
+
+ifeq ($(THEOS_CURRENT_INSTANCE),)
+	include $(THEOS_MAKE_PATH)/stage.mk
+	include $(THEOS_MAKE_PATH)/package.mk
+endif
+THEOS_PACKAGE_VERSION = $(call __simplify,THEOS_PACKAGE_VERSION,$(THEOS_PACKAGE_BASE_VERSION)$(warning THEOS_PACKAGE_VERSION is deprecated. Please migrate to THEOS_PACKAGE_BASE_VERSION.))
+
+$(eval $(call __mod,common.mk))

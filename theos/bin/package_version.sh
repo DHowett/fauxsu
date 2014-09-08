@@ -1,6 +1,14 @@
 #!/bin/bash
 
-while getopts ":e:1c:" flag; do
+function build_num_from_file {
+	version=$(< "$1")
+	version=${version##*-}
+	version=${version%%+*}
+	version=${version%%~*}
+	echo -n "$version"
+}
+
+while getopts ":N:V:" flag; do
 	case "$flag" in
 		:)	echo "$0: Option -$OPTARG requires an argument." 1>&2
 			exit 1
@@ -8,48 +16,29 @@ while getopts ":e:1c:" flag; do
 		\?)	echo "$0: What're you talking about?" 1>&2
 			exit 1
 			;;
-		e)	EXTRAVERS="$OPTARG" ;;
-		c)	CONTROL="$OPTARG" ;;
-		1)	SKIPONE=1 ;;
+		N)	package="$OPTARG" ;;
+		V)	version="$OPTARG" ;;
 	esac
 done
 
-if [[ -z "$CONTROL" || ! -f "$CONTROL" ]]; then
-	echo "$0: Please specify a control file with -c." 1>&2
-	exit 1;
-fi
-
-if [[ ! -d "${FW_PROJECT_DIR}/.theos/packages" ]]; then
-	if [[ -d "${FW_PROJECT_DIR}/.debmake" ]]; then
-		mkdir -p "${FW_PROJECT_DIR}/.theos"
-		mv "${FW_PROJECT_DIR}/.debmake" "${FW_PROJECT_DIR}/.theos/packages"
+if [[ ! -d "${THEOS_PROJECT_DIR}/.theos/packages" ]]; then
+	if [[ -d "${THEOS_PROJECT_DIR}/.debmake" ]]; then
+		mkdir -p "${THEOS_PROJECT_DIR}/.theos"
+		mv "${THEOS_PROJECT_DIR}/.debmake" "${THEOS_PROJECT_DIR}/.theos/packages"
 	else
-		mkdir -p "${FW_PROJECT_DIR}/.theos/packages"
+		mkdir -p "${THEOS_PROJECT_DIR}/.theos/packages"
 	fi
 fi
 
-package=$(grep "^Package:" "$CONTROL" | cut -d' ' -f2)
-version=$(grep "^Version:" "$CONTROL" | cut -d' ' -f2)
-versionfile="${FW_PROJECT_DIR}/.theos/packages/$package-$version"
+versionfile="${THEOS_PROJECT_DIR}/.theos/packages/$package-$version"
 build_number=0
 
 if [[ ! -e "$versionfile" ]]; then
-	echo -n 1 > "$versionfile"
 	build_number=1
 else
-	build_number=$(< "$versionfile")
+	build_number=$(build_num_from_file "$versionfile")
 	let build_number++
-	echo -n "$build_number" > "$versionfile"
 fi
 
-buildno_part="-$build_number"
-if [[ $SKIPONE -eq 1 && $build_number -eq 1 ]]; then
-	buildno_part=""
-fi
-
-extra_part=""
-if [[ ! -z "$EXTRAVERS" ]]; then
-	extra_part="+$EXTRAVERS"
-fi
-
-sed -e "s/^Version: \(.*\)/Version: \1$buildno_part$extra_part/g" $CONTROL
+echo -n "$build_number" > "$versionfile"
+echo "$build_number"
