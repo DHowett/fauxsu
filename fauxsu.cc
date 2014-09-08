@@ -3,6 +3,9 @@
 #include <sys/stat.h>
 #include <sys/errno.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <limits.h>
 
 #include <map>
 using namespace std;
