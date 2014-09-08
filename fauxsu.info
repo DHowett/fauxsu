@@ -7,7 +7,7 @@ License: GPL
 BuildDepends: fink (>= 0.28)
 Source: http://dist.howett.net/f/fauxsu/fauxsu-%v.tgz
 SourceDirectory: fauxsu-%v
-Source-MD5: fa1172e551ca4fba579fc5455ff40546
+Source-MD5: f43486d0f685b38774c7340caaa51791
 CompileScript: <<
  sed -i '' -e 's/libexec/%lib/' Makefile
  make INSTALL_PREFIX=%p messages=yes
