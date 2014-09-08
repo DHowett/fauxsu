@@ -29,8 +29,16 @@ struct mode_entry {
 
 typedef map<ino_t, struct ownership_entry *> ownmap;
 typedef map<ino_t, mode_t> modemap;
-ownmap olist;
-modemap mlist;
+
+ownmap &olist() {
+	static ownmap olist_;
+	return olist_;
+}
+
+modemap &mlist() {
+	static modemap mlist_;
+	return mlist_;
+}
 
 static __attribute((unused)) void hexdump(void *mem, unsigned int c) {
 	unsigned int num;
@@ -44,7 +52,7 @@ static __attribute((unused)) void hexdump(void *mem, unsigned int c) {
 
 static void ifakemode(dev_t dev, ino_t ino, mode_t mode) {
 	dlog("Setting faking mode to %o for %d.\n", mode, ino);
-	mlist[ino] = mode;
+	mlist()[ino] = mode;
 }
 
 static void ifakeown(dev_t dev, ino_t ino, uid_t owner, gid_t group) {
@@ -52,7 +60,7 @@ static void ifakeown(dev_t dev, ino_t ino, uid_t owner, gid_t group) {
 	struct ownership_entry *x = new ownership_entry();
 	x->owner = owner;
 	x->group = group;
-	olist[ino] = x;
+	olist()[ino] = x;
 }
 
 static void fakemode(const char *path, mode_t mode) {
@@ -92,15 +100,15 @@ static void dofake(struct stat *buf) {
 	buf->st_uid = 0;
 	buf->st_gid = 0;
 
-	if(olist.find(buf->st_ino) != olist.end()) {
-		struct ownership_entry *x = olist[buf->st_ino];
+	if(olist().find(buf->st_ino) != olist().end()) {
+		struct ownership_entry *x = olist()[buf->st_ino];
 		buf->st_uid = x->owner;
 		buf->st_gid = x->group;
 		dlog("Returning fake ownership %d:%d for %d.\n", buf->st_uid, buf->st_gid, buf->st_ino);
 	}
 
-	if(mlist.find(buf->st_ino) != mlist.end()) {
-		buf->st_mode = mlist[buf->st_ino];
+	if(mlist().find(buf->st_ino) != mlist().end()) {
+		buf->st_mode = mlist()[buf->st_ino];
 		dlog("Returning fake mode %d for %d.\n", buf->st_mode, buf->st_ino);
 	}
 
@@ -192,19 +200,19 @@ char *persist_file_name() {
 }
 
 static __attribute__((destructor)) void fini() {
-	int nmodes = mlist.size();
-	int nowns = olist.size();
+	int nmodes = mlist().size();
+	int nowns = olist().size();
 	if(nmodes == 0 && nowns == 0) return;
 	FILE *o = fopen(persist_file_name(), "wb+");
 	fwrite(&nmodes, 1, sizeof(int), o);
 	fwrite(&nowns, 1, sizeof(int), o);
-	for(modemap::const_iterator it = mlist.begin(); it != mlist.end(); ++it) {
+	for(modemap::const_iterator it = mlist().begin(); it != mlist().end(); ++it) {
 		ino_t ino = it->first;
 		mode_t mode = it->second;
 		fwrite(&ino, 1, sizeof(ino_t), o);
 		fwrite(&mode, 1, sizeof(mode_t), o);
 	}
-	for(ownmap::const_iterator it = olist.begin(); it != olist.end(); ++it) {
+	for(ownmap::const_iterator it = olist().begin(); it != olist().end(); ++it) {
 		ino_t ino = it->first;
 		struct ownership_entry *x = it->second;
 		fwrite(&ino, 1, sizeof(ino_t), o);
@@ -225,7 +233,7 @@ static __attribute__((constructor)) void init() {
 		mode_t mode;
 		fread(&ino, 1, sizeof(ino_t), o);
 		fread(&mode, 1, sizeof(mode_t), o);
-		mlist[ino] = mode;
+		mlist()[ino] = mode;
 	}
 	for(int i = 0; i < nowns; ++i) {
 		ino_t ino;
@@ -237,7 +245,7 @@ static __attribute__((constructor)) void init() {
 		struct ownership_entry *x = new ownership_entry();
 		x->owner = owner;
 		x->group = group;
-		olist[ino] = x;
+		olist()[ino] = x;
 	}
 }
 
