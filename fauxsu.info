@@ -7,15 +7,24 @@ License: GPL
 BuildDepends: fink (>= 0.28)
 Source: http://dist.howett.net/f/fauxsu/fauxsu-%v.tgz
 SourceDirectory: fauxsu-%v
-Source-MD5: f43486d0f685b38774c7340caaa51791
+Source-MD5: 097e61d9e9042cc7ff93815f98c1933c
 CompileScript: <<
+ #!/bin/bash -e -x
  sed -i '' -e 's/libexec/%lib/' Makefile
  make INSTALL_PREFIX=%p messages=yes
 <<
 InstallScript: <<
- make stage INSTALL_PREFIX=%p THEOS_STAGING_DIR=%d messages=yes
+ #!/bin/bash -e -x
+ d=$(mktemp -d "/tmp/fink-%N-XXXXXX")
+ if ! [ -d "$d" ]; then
+   printf "failed to create temporary directory\n" >&2
+   exit 1
+ fi
+ make stage INSTALL_PREFIX=%p THEOS_STAGING_DIR="$d" messages=yes
+ rsync -a --delete "$d/" "%d/"
  mkdir -p %i/share/doc/%N
- cp LICENSE %i/share/doc/%N
+ cp LICENSE %i/share/doc/%N || true
+ [ -d "$d" ] && rm -rf "$d"
 <<
 Description: Grants applications fake root privileges
 DescDetail: <<
